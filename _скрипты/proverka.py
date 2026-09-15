@@ -20,6 +20,7 @@ TODAY = dt.date.today()
 SKIP_DIRS = {".git", ".obsidian", ".agents", ".claude", "_скрипты", "_шаблоны", "0-Начало", "_личное", "_private", "__pycache__", "node_modules"}
 SKIP_FILES = {"README.md", "AGENTS.md", "CLAUDE.md", "GEMINI.md"}
 SERVICE = {"СЕЙЧАС.md", "ЖУРНАЛ.md", "ОГЛАВЛЕНИЕ.md", "УСТАНОВКА.md", "МЕТОДОЛОГИЯ.md"}
+TEMPLATES = {"_шаблон-карточки.md", "карточка.md"}  # шаблоны с заглушками {{…}} — не страницы
 ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 LINK = re.compile(r"\[\[([^\]\|#]+)(?:#[^\]\|]*)?(?:\|[^\]]*)?\]\]")
 FENCE = re.compile(r"```.*?```", re.S)
@@ -87,7 +88,7 @@ def main() -> int:
         return 0
 
     all_md = walk_md()
-    pages = [p for p in all_md if os.path.basename(p) not in SKIP_FILES]
+    pages = [p for p in all_md if os.path.basename(p) not in SKIP_FILES and os.path.basename(p) not in TEMPLATES]
     names: dict[str, list[str]] = {}
     for p in all_md:
         names.setdefault(os.path.splitext(os.path.basename(p))[0].lower(), []).append(p)
@@ -138,7 +139,7 @@ def main() -> int:
 
     # 3–4. Оглавление и журнал
     content_pages = [p for p in pages if os.path.basename(p) not in SERVICE and not rel(p).startswith("Сырьё" + os.sep)
-                     and os.path.basename(p) not in ("_правила.md", "карточка.md")]
+                     and os.path.basename(p) != "_правила.md"]
     recent: set[str] | None = None
     added = git("log", "--since=30 days ago", "--diff-filter=A", "--name-only", "--format=", "--", "*.md")
     untracked = git("ls-files", "--others", "--exclude-standard", "--", "*.md")
