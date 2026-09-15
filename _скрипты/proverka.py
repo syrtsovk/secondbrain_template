@@ -13,6 +13,13 @@ import re
 import subprocess
 import sys
 
+# Windows: консоль по умолчанию не utf-8 — иначе падает на эмодзи и кириллице
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 TODAY = dt.date.today()
 

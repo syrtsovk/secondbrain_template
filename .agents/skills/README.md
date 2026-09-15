@@ -4,7 +4,7 @@
 
 | Умение | Откуда |
 |---|---|
-| `ustanovka`, `start`, `finish`, `sozvon`, `zapisi`, `mysl`, `sprosi`, `razdel`, `proverka`, `itogi`, `pomosh` | написаны для этого шаблона |
+| `ustanovka`, `start`, `finish`, `sozvon`, `zapisi`, `mysl`, `sprosi`, `razdel`, `proverka`, `itogi`, `pomosh`, `obnovit` | написаны для этого шаблона |
 | `promptmaker` | перенесён из проекта автора (v3.1); в описание добавлены разговорные триггеры |
 
 Свои умения — сюда же, по `0-Начало/7-свои-умения.md`. Обновление из шаблона — по `0-Начало/ВОПРОСЫ.md` («Как обновить умения»).
