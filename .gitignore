@@ -1,0 +1,20 @@
+# Личное — есть на компьютере, в облако не уходит никогда
+_личное/
+_private/
+
+# Секреты — никогда
+.env
+*.env
+!.env.example
+*token*
+*secret*
+credentials.json
+
+# Системный мусор
+.DS_Store
+Thumbs.db
+~$*
+*.tmp
+__pycache__/
+*.pyc
+.obsidian/workspace*.json
