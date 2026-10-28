@@ -24,7 +24,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 TODAY = dt.date.today()
 
 # Что не проверяем на шапки/оглавление: инструкции людям, заготовки, умения, скрипты, личное.
-SKIP_DIRS = {".git", ".obsidian", ".agents", ".claude", "_скрипты", "_шаблоны", "0-Начало", "_личное", "_private", "__pycache__", "node_modules"}
+SKIP_DIRS = {".git", ".obsidian", ".agents", ".claude", "_скрипты", "_шаблоны", "0-Начало", "_личное", "_private", "_настройки-ИИ", "__pycache__", "node_modules"}
 SKIP_FILES = {"README.md", "AGENTS.md", "CLAUDE.md", "GEMINI.md"}
 SERVICE = {"СЕЙЧАС.md", "ЖУРНАЛ.md", "ОГЛАВЛЕНИЕ.md", "УСТАНОВКА.md", "МЕТОДОЛОГИЯ.md"}
 TEMPLATES = {"_шаблон-карточки.md", "карточка.md"}  # шаблоны с заглушками {{…}} — не страницы
@@ -188,6 +188,15 @@ def main() -> int:
             ahead = git("rev-list", "--count", "@{u}..HEAD")
             if ahead and ahead.strip().isdigit() and int(ahead.strip()) > 0:
                 yellow.append(f"{ahead.strip()} сохранений не отправлено в облако")
+
+    # 6а. Давно не было бэкапа настроек ИИ (умение bekap)
+    meta = os.path.join(ROOT, "_настройки-ИИ", "_откуда.json")
+    if os.path.exists(meta):
+        m = re.search(r'"дата":\s*"(\d{4}-\d{2}-\d{2})"', read(meta))
+        if m and (TODAY - dt.date.fromisoformat(m.group(1))).days > 14:
+            yellow.append(f"Бэкап настроек ИИ был {m.group(1)} — больше двух недель назад, скажи «сделай бэкап»")
+    else:
+        info.append("Бэкапа настроек ИИ ещё не было — на новом компьютере правила и память ИИ не вернутся; скажи «сделай бэкап»")
 
     # 7. Давность проверки
     checks = re.findall(r"\[(\d{4}-\d{2}-\d{2})[^\]]*\]\s*проверка", journal_text)
