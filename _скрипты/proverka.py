@@ -59,10 +59,27 @@ def git(*args: str) -> str | None:
         return None
 
 
-def walk_md() -> list[str]:
+def own_dirs() -> set[str]:
+    """Свои папки человека (принятая папка): строка «**Свои папки…**» в AGENTS.md, имена в `обратных кавычках`.
+    ИИ их читает, но не ведёт: шапки, оглавление и журнал там не требуются."""
+    p = os.path.join(ROOT, "AGENTS.md")
+    if not os.path.isfile(p):
+        return set()
+    for line in read(p).splitlines():
+        if line.startswith("**Свои папки"):
+            return {n.strip("/") for n in re.findall(r"`([^`]+)`", line) if "{{" not in n}
+    return set()
+
+
+OWN = set()
+
+
+def walk_md(skip_own: bool = True) -> list[str]:
     files = []
     for dirpath, dirnames, filenames in os.walk(ROOT):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
+        top = dirpath == ROOT
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")
+                       and not (skip_own and top and d in OWN)]
         for f in filenames:
             if f.endswith(".md"):
                 files.append(os.path.join(dirpath, f))
@@ -94,10 +111,12 @@ def main() -> int:
         print(f"Не похоже на базу: нет AGENTS.md в {ROOT}")
         return 0
 
+    OWN.update(own_dirs())
     all_md = walk_md()
+    own_md = [p for p in walk_md(skip_own=False) if p not in set(all_md)]
     pages = [p for p in all_md if os.path.basename(p) not in SKIP_FILES and os.path.basename(p) not in TEMPLATES]
     names: dict[str, list[str]] = {}
-    for p in all_md:
+    for p in all_md + own_md:  # на файлы своих папок ссылаться можно
         names.setdefault(os.path.splitext(os.path.basename(p))[0].lower(), []).append(p)
     # ссылки могут вести и на заготовки/пример — их имена тоже считаем существующими
     for dirpath, dirnames, filenames in os.walk(ROOT):
@@ -208,7 +227,7 @@ def main() -> int:
         info.append("Это первая проверка порядка — после неё ИИ запишет её в журнал")
 
     # 8. Персональные данные и ключи
-    for p in pages + [os.path.join(ROOT, f) for f in SKIP_FILES if os.path.isfile(os.path.join(ROOT, f))]:
+    for p in pages + own_md + [os.path.join(ROOT, f) for f in SKIP_FILES if os.path.isfile(os.path.join(ROOT, f))]:
         text = read(p)
         for rx, why in PD_PATTERNS:
             if rx.search(text):
