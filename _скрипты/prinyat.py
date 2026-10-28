@@ -145,6 +145,18 @@ def apply(target: Path, a: dict) -> None:
                 with dst.open("a", encoding="utf-8") as fh:
                     fh.write("\n# — из шаблона второго мозга —\n" + "\n".join(extra) + "\n")
             continue
+        if dst.exists() and src.is_dir() and name.startswith("."):
+            for f in files_in(src):  # .claude/.codex человека: добавить недостающее, своё не трогать
+                d = dst / f.relative_to(src)
+                if not d.exists():
+                    d.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(f, d)
+                    added += 1
+                elif d.read_bytes() != f.read_bytes():
+                    side_path = d.with_name(f"{d.stem}.шаблон{d.suffix}")
+                    shutil.copy2(f, side_path)
+                    side.append(f"{d.relative_to(target)} (шаблонный рядом: {side_path.name})")
+            continue
         if dst.exists():
             if src.is_file():
                 shutil.copy2(src, target / f"{dst.stem}.шаблон{dst.suffix}")

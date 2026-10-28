@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && (python3 _скрипты/start.py || python _скрипты/start.py)",
+            "timeout": 40
+          }
+        ]
+      }
+    ]
+  }
+}
