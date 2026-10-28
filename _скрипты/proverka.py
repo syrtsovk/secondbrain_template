@@ -189,7 +189,7 @@ def main() -> int:
             if ahead and ahead.strip().isdigit() and int(ahead.strip()) > 0:
                 yellow.append(f"{ahead.strip()} сохранений не отправлено в облако")
 
-    # 6а. Давно не было бэкапа настроек ИИ (умение bekap)
+    # 6а. Давно не было бэкапа настроек ИИ (умение backup)
     meta = os.path.join(ROOT, "_настройки-ИИ", "_откуда.json")
     if os.path.exists(meta):
         m = re.search(r'"дата":\s*"(\d{4}-\d{2}-\d{2})"', read(meta))
@@ -221,6 +221,19 @@ def main() -> int:
         fm = frontmatter(read(ust)) or {}
         if fm.get("status", "") != "завершена":
             info.append(f"Установка не завершена (шаг {fm.get('step', '?')}) — скажи «продолжим установку»")
+
+    # 9а. Правила для ИИ: короткие и без заглушек (sbgo/references/pravila.md)
+    agents = os.path.join(ROOT, "AGENTS.md")
+    if os.path.isfile(agents):
+        text = read(agents)
+        words = len(re.sub(r"<!--.*?-->", "", text, flags=re.S).split())
+        done = os.path.isfile(ust) and (frontmatter(read(ust)) or {}).get("status", "") == "завершена"
+        if done and "{{" in text:
+            red.append("AGENTS.md: остались заглушки {{…}} в блоке про тебя — скажи «проверь правила»")
+        if words > 900:
+            yellow.append(f"AGENTS.md: {words} слов — длиннее 900, ИИ начнёт пропускать середину; скажи «проверь правила»")
+        else:
+            info.append(f"AGENTS.md: {words} слов из 900")
 
     # 10. Дубли карточек
     seen: dict[str, list[str]] = {}
