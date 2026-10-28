@@ -33,7 +33,7 @@ LINK = re.compile(r"\[\[([^\]\|#]+)(?:#[^\]\|]*)?(?:\|[^\]]*)?\]\]")
 FENCE = re.compile(r"```.*?```", re.S)
 INLINE = re.compile(r"`[^`\n]*`")
 PD_PATTERNS = [
-    (re.compile(r"\b\d{2}\s?\d{2}\s?\d{6}\b"), "похоже на серию и номер паспорта"),
+    (re.compile(r"\b\d{2} \d{2} \d{6}\b|(?i:паспорт)\D{0,30}\d{2}\s?\d{2}\s?\d{6}\b"), "похоже на серию и номер паспорта"),
     (re.compile(r"\b\d{3}-\d{3}-\d{3}[ -]\d{2}\b"), "похоже на СНИЛС"),
     (re.compile(r"\b(?:sk|ghp|gho|xox[bp])[-_][A-Za-z0-9_-]{16,}"), "похоже на ключ доступа"),
     (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "похоже на ключ AWS"),
@@ -113,7 +113,8 @@ def main() -> int:
 
     OWN.update(own_dirs())
     all_md = walk_md()
-    own_md = [p for p in walk_md(skip_own=False) if p not in set(all_md)]
+    seen_md = set(all_md)
+    own_md = [p for p in walk_md(skip_own=False) if p not in seen_md]
     pages = [p for p in all_md if os.path.basename(p) not in SKIP_FILES and os.path.basename(p) not in TEMPLATES]
     names: dict[str, list[str]] = {}
     for p in all_md + own_md:  # на файлы своих папок ссылаться можно
@@ -241,11 +242,21 @@ def main() -> int:
         if fm.get("status", "") != "завершена":
             info.append(f"Установка не завершена (шаг {fm.get('step', '?')}) — скажи «продолжим установку»")
 
+    # 9в. Автозапуск: программа есть, а файлов, которые её запускают, нет (старое обновление их не приносит)
+    def has_hook(rel_path: str) -> bool:
+        p = os.path.join(ROOT, rel_path)
+        return os.path.isfile(p) and "start.py" in read(p)
+    autostart = has_hook(os.path.join(".claude", "settings.json")) and has_hook(os.path.join(".codex", "hooks.json"))
+    if os.path.isfile(os.path.join(ROOT, "_скрипты", "start.py")) and not autostart:
+        yellow.append("Автозапуск не настроен: нет `.claude/settings.json` или `.codex/hooks.json` с `start.py` — "
+                      "скопируй их из шаблона github.com/syrtsovk/secondbrain_template (свои настройки в них сохрани)")
+
     # 9б. Остатки старых умений после обновления (переехали внутрь sbgo / переименованы)
     skills = os.path.join(ROOT, ".agents", "skills")
+    new_start = autostart and "start.py" in read(os.path.join(ROOT, "AGENTS.md"))
     if os.path.isdir(os.path.join(skills, "sbgo")):
         old = [n for n in ("start", "ustanovka", "razdel", "itogi", "proverka", "pomosh", "obnovit", "vosstanovit", "sprosi", "bekap")
-               if os.path.isdir(os.path.join(skills, n))]
+               if os.path.isdir(os.path.join(skills, n)) and (n != "start" or new_start)]  # start — пока нет автозапуска, он нужен
         old += ["_скрипты/bekap.py"] if os.path.isfile(os.path.join(ROOT, "_скрипты", "bekap.py")) else []
         if old:
             yellow.append("После обновления остались старые умения: " + ", ".join(old) +

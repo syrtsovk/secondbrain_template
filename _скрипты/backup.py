@@ -13,8 +13,12 @@
   python3 _скрипты/backup.py --vosstanovit    показать, что вернётся на место (ничего не пишет)
   python3 _скрипты/backup.py --vosstanovit --da   вернуть на место
 
+  python3 _скрипты/backup.py --oblako-privatnoe  человек подтвердил: облако закрыто (когда проверить само не вышло)
+  python3 _скрипты/backup.py --proverit-oblako  перед отправкой в облако: можно ли туда копию настроек (коды 0 / 4 / 6)
+
 Коды: 0 — готово · 1 — нашлось похожее на паспорт/ключ, стоп (печатает файл и строку, без значения) ·
-4 — облако открыто всем (публичный репозиторий), настройки не кладём · 5 — восстанавливать нечего.
+4 — облако открыто всем (публичный репозиторий), настройки не кладём · 5 — восстанавливать нечего ·
+6 — не удалось проверить, закрыто ли облако, настройки не кладём (подтверждение — флаг выше, запоминается).
 Значения ключей скрипт не печатает и в копию не кладёт: заменяет заглушкой.
 """
 from __future__ import annotations
@@ -26,6 +30,8 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -69,7 +75,7 @@ HARD = re.compile(
 )
 PD = [
     (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY"), "закрытый ключ"),
-    (re.compile(r"\b\d{2}\s?\d{2}\s?\d{6}\b"), "похоже на серию и номер паспорта"),
+    (re.compile(r"\b\d{2} \d{2} \d{6}\b|(?i:паспорт)\D{0,30}\d{2}\s?\d{2}\s?\d{6}\b"), "похоже на серию и номер паспорта"),
     (re.compile(r"\b\d{3}-\d{3}-\d{3}[ -]\d{2}\b"), "похоже на СНИЛС"),
     (re.compile(r"\b(?:\d{4}[ -]?){3}\d{4}\b"), "похоже на номер карты"),
     (re.compile(r"(?i)(?:пароль|password)\s*[:=]\s*(?!<)\S{4,}"), "похоже на пароль"),
@@ -170,17 +176,35 @@ def mcp_codex() -> str:
     return "\n".join(lines) + "\n"
 
 
-def repo_is_public() -> bool | None:
-    """True — открыт всем, False — приватный, None — не узнать (нет облака или программы gh)."""
-    if not subprocess.run(["git", "remote"], cwd=ROOT, capture_output=True, text=True).stdout.strip():
-        return None
+def remote_url() -> str:
+    r = subprocess.run(["git", "remote"], cwd=ROOT, capture_output=True, text=True)
+    names = r.stdout.split()
+    if not names:
+        return ""
+    name = "origin" if "origin" in names else names[0]
+    return subprocess.run(["git", "remote", "get-url", name], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+
+
+def repo_is_public(url: str) -> bool | None:
+    """True — открыт всем, False — закрыт, None — не узнать. Сначала gh, потом GitHub без входа."""
     try:
         r = subprocess.run(["gh", "repo", "view", "--json", "visibility", "-q", ".visibility"],
                            cwd=ROOT, capture_output=True, text=True, timeout=20)
+        v = {"PUBLIC": True, "PRIVATE": False, "INTERNAL": False}.get(r.stdout.strip().upper())
+        if v is not None:
+            return v
     except (OSError, subprocess.TimeoutExpired):
+        pass
+    m = re.search(r"github\.com[:/]([^/\s]+)/([^/\s]+?)(?:\.git)?/?$", url)
+    if not m:
+        return None  # не GitHub — проверить нечем
+    try:  # без входа GitHub отдаёт только открытые репозитории; закрытый для чужих — «нет такого»
+        urllib.request.urlopen(f"https://api.github.com/repos/{m.group(1)}/{m.group(2)}", timeout=10)
+        return True
+    except urllib.error.HTTPError as e:
+        return False if e.code == 404 else None
+    except (urllib.error.URLError, OSError, ValueError):
         return None
-    v = r.stdout.strip().upper()
-    return {"PUBLIC": True, "PRIVATE": False, "INTERNAL": False}.get(v)
 
 
 def scan(folder: Path) -> list[str]:
@@ -199,11 +223,34 @@ def scan(folder: Path) -> list[str]:
     return found
 
 
-def backup(arhiv: bool, ne_pdn: bool) -> int:
-    if repo_is_public():
+def cloud_check(privatnoe: bool) -> tuple[int, str, str]:
+    """0 — можно, 4 — облако открыто всем, 6 — не узнать и не подтверждено. Возвращает (код, облако, подтверждение)."""
+    url = remote_url()
+    confirmed = ""
+    try:
+        confirmed = json.loads((DEST / "_откуда.json").read_text(encoding="utf-8")).get("облако_закрыто_подтвердил", "")
+    except (OSError, ValueError):
+        pass
+    public = repo_is_public(url) if url else False
+    if public:
+        return 4, url, confirmed
+    if public is None and not privatnoe and confirmed != url:
+        return 6, url, confirmed
+    return 0, url, (url if privatnoe else confirmed)
+
+
+def backup(arhiv: bool, ne_pdn: bool, privatnoe: bool) -> int:
+    code, url, confirmed = cloud_check(privatnoe)
+    public = code == 4
+    if public:
         print("Облако базы открыто всем (публичный репозиторий). Настройки и память ИИ туда не кладу.\n"
               "Сделай репозиторий приватным на github.com (Settings → Danger Zone → Change visibility) и повтори.")
         return 4
+    if code == 6:
+        print("Не смог проверить, закрыто ли облако базы (нет программы gh, нет сети или это не GitHub). "
+              "Настройки и память ИИ пока не кладу.\nСпроси человека: облако закрыто (Private)? Да → "
+              "`backup.py --oblako-privatnoe` — запомню и больше не спрошу для этого облака.")
+        return 6
     if DEST.exists():
         shutil.rmtree(DEST)  # собираем заново: удалённое у тебя пропадёт и из копии
     DEST.mkdir()
@@ -233,6 +280,8 @@ def backup(arhiv: bool, ne_pdn: bool) -> int:
         (DEST / "codex/подключения.toml").write_text(codex, encoding="utf-8")
 
     meta = {"дата": TODAY, "дом": str(HOME), "база": str(ROOT), "память": paths}
+    if confirmed:
+        meta["облако_закрыто_подтвердил"] = confirmed
     (DEST / "_откуда.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     keys = sorted({k for servers in mcp.values() for s in servers.values() for k in (s.get("env") or s.get("headers") or {})})
     keys += sorted(set(re.findall(r'^\s*([\w-]+)\s*=\s*"' + re.escape(STUB), codex, re.M)))
@@ -253,7 +302,7 @@ def backup(arhiv: bool, ne_pdn: bool) -> int:
         print(f"  {k}: {v}")
     if skipped:
         print("Не взято:\n  " + "\n  ".join(skipped[:10]))
-    zips = sorted((HOME / "Бэкап второго мозга").glob(f"{ROOT.name}-*.zip"))
+    zips = own_zips()
     last = dt.date.fromisoformat(zips[-1].stem[-10:]) if zips else None
     if arhiv or not last or (dt.date.today() - last).days > 30:
         make_arhiv()
@@ -293,6 +342,13 @@ author: ии
     (DEST / "ОПИСЬ.md").write_text(text, encoding="utf-8")
 
 
+def own_zips() -> list[Path]:
+    """Только наши архивы: «<имя базы>-ГГГГ-ММ-ДД.zip». Чужие файлы в папке не трогаем и не читаем."""
+    rx = re.compile(re.escape(ROOT.name) + r"-\d{4}-\d{2}-\d{2}\.zip")
+    folder = HOME / "Бэкап второго мозга"
+    return sorted(f for f in folder.glob("*.zip") if rx.fullmatch(f.name)) if folder.is_dir() else []
+
+
 def make_arhiv() -> None:
     folder = HOME / "Бэкап второго мозга"
     folder.mkdir(exist_ok=True)
@@ -301,7 +357,7 @@ def make_arhiv() -> None:
         for f in ROOT.rglob("*"):
             if f.is_file() and ".git" not in f.relative_to(ROOT).parts:
                 z.write(f, f.relative_to(ROOT))
-    old = sorted(folder.glob(f"{ROOT.name}-*.zip"))[:-3]  # храним три последних
+    old = own_zips()[:-3]  # храним три последних своих
     for f in old:
         f.unlink()
     print(f"Архив всей базы (с папкой _личное): {out} — {out.stat().st_size // 1024} КБ. Скопируй на флешку или диск.")
@@ -347,6 +403,13 @@ def restore(apply: bool) -> int:
 
 
 if __name__ == "__main__":
+    if "--proverit-oblako" in sys.argv:
+        if not (DEST / "_откуда.json").exists():
+            sys.exit(0)  # копии настроек нет — отправлять нечего опасного
+        c = cloud_check("--oblako-privatnoe" in sys.argv)[0]
+        print({0: "Можно отправлять: облако закрыто.", 4: "НЕ ОТПРАВЛЯТЬ: облако открыто всем, а в базе копия настроек и памяти ИИ.",
+               6: "НЕ ОТПРАВЛЯТЬ: не смог проверить, закрыто ли облако. Спроси человека и запусти с --oblako-privatnoe."}[c])
+        sys.exit(c)
     if "--vosstanovit" in sys.argv:
         sys.exit(restore("--da" in sys.argv))
-    sys.exit(backup("--arhiv" in sys.argv, "--eto-ne-pdn" in sys.argv))
+    sys.exit(backup("--arhiv" in sys.argv, "--eto-ne-pdn" in sys.argv, "--oblako-privatnoe" in sys.argv))

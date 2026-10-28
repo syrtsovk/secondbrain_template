@@ -36,8 +36,10 @@ def read(name: str) -> str:
 
 
 def git(*args: str, timeout: int = 10) -> subprocess.CompletedProcess | None:
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0")  # не ждать ввода пароля: в начале разговора его некому ввести
     try:
-        return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, timeout=timeout)
+        return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, timeout=timeout,
+                              stdin=subprocess.DEVNULL, env=env)
     except (OSError, subprocess.TimeoutExpired):
         return None
 
@@ -90,8 +92,17 @@ def main() -> int:
             if pull is None:
                 out.append("- Облако не ответило за 25 секунд — работаем с тем, что на компьютере.")
             elif pull.returncode:
-                out.append("- Облако и компьютер разошлись — подтянуть само не вышло. Сделай `git pull --rebase`; "
-                           "конфликт → покажи человеку оба варианта и спроси, не выбирай сам.")
+                err = pull.stderr.lower()
+                if any(w in err for w in ("could not read username", "authentication", "permission denied", "403", "terminal prompts disabled")):
+                    out.append("- Облако не пустило: на этом компьютере не выполнен вход в GitHub. Скажи человеку простыми словами "
+                               "и предложи войти (`gh auth login`, откроется браузер). Работаем с тем, что на компьютере.")
+                elif any(w in err for w in ("could not resolve host", "unable to access", "timed out", "connection", "network")):
+                    out.append("- Облако недоступно (нет сети?) — работаем с тем, что на компьютере; подтянешь позже.")
+                elif "no tracking information" in err:
+                    out.append("- Облако подключено, но ветка с ним не связана — сделай `git push -u origin main`.")
+                else:
+                    out.append("- Облако и компьютер разошлись — подтянуть само не вышло. Сделай `git pull --rebase`; "
+                               "конфликт → покажи человеку оба варианта и спроси, не выбирай сам.")
             else:
                 out.append("- Облако подтянуто: пришли свежие изменения (с другого устройства или от коллег)." if head() != before else "- Облако: новых изменений нет.")
         else:
@@ -110,7 +121,9 @@ def main() -> int:
     if done:
         journal = read("ЖУРНАЛ.md")
         checks = re.findall(r"\[(\d{4}-\d{2}-\d{2})[^\]]*\]\s*проверка", journal)
-        if not checks or (age(max(checks)) or 0) > 30:
+        if not checks:
+            out.append("- Проверки порядка ещё не было — одной строкой предложи «проверь порядок».")
+        elif (age(max(checks)) or 0) > 30:
             out.append("- Проверки порядка не было больше месяца — одной строкой предложи «проверь порядок».")
         b = re.search(r'"дата":\s*"(\d{4}-\d{2}-\d{2})"', read(os.path.join("_настройки-ИИ", "_откуда.json")))
         if not b or (age(b.group(1)) or 0) > 14:

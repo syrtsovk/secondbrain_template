@@ -38,7 +38,7 @@ TEMPLATE_SKIP = {".git", "README.md"}  # README шаблона — про сам
 BIG = 50_000_000  # GitHub не примет файл больше 100 МБ, предупреждаем заранее
 SECRET_NAME = re.compile(r"secret|credential|token|password|пароль|^\.env|\.pem$|\.key$|id_rsa", re.I)
 PD = [
-    (re.compile(r"\b\d{2}\s?\d{2}\s?\d{6}\b"), "похоже на паспорт"),
+    (re.compile(r"\b\d{2} \d{2} \d{6}\b|(?i:паспорт)\D{0,30}\d{2}\s?\d{2}\s?\d{6}\b"), "похоже на паспорт"),
     (re.compile(r"\b\d{3}-\d{3}-\d{3}[ -]\d{2}\b"), "похоже на СНИЛС"),
     (re.compile(r"(?i)(?:пароль|password)\s*[:=]\s*\S{4,}"), "похоже на пароль"),
     (re.compile(r"\b(?:sk|ghp|gho|xox[bp])[-_][A-Za-z0-9_-]{16,}"), "похоже на ключ"),
@@ -133,7 +133,11 @@ def apply(target: Path, a: dict) -> None:
     if a["loose"]:
         (target / LOOSE_DIR).mkdir(exist_ok=True)
         for p in a["loose"]:
-            shutil.move(str(p), str(target / LOOSE_DIR / p.name))
+            dest, n = target / LOOSE_DIR / p.name, 1
+            while dest.exists():  # такой файл уже есть в «Мои файлы» — не затирать, дать новое имя
+                dest = target / LOOSE_DIR / f"{p.stem} (из корня{'' if n == 1 else ' ' + str(n)}){p.suffix}"
+                n += 1
+            shutil.move(str(p), str(dest))
         print(f"Файлы из корня → «{LOOSE_DIR}/»: {len(a['loose'])}")
     added, side = 0, []
     for name in template_entries():
