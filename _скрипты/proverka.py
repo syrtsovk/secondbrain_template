@@ -26,7 +26,9 @@ TODAY = dt.date.today()
 # Что не проверяем на шапки/оглавление: инструкции людям, заготовки, умения, скрипты, личное.
 SKIP_DIRS = {".git", ".obsidian", ".agents", ".claude", "_скрипты", "_шаблоны", "0-Начало", "_личное", "_private", "_настройки-ИИ", "__pycache__", "node_modules"}
 SKIP_FILES = {"README.md", "AGENTS.md", "CLAUDE.md", "GEMINI.md"}
-SERVICE = {"СЕЙЧАС.md", "ЖУРНАЛ.md", "ОГЛАВЛЕНИЕ.md", "УСТАНОВКА.md", "МЕТОДОЛОГИЯ.md"}
+SERVICE = {"СЕЙЧАС.md", "ЖУРНАЛ.md", "ОГЛАВЛЕНИЕ.md", "УСТАНОВКА.md", "МЕТОДОЛОГИЯ.md", "_оглавление.md"}
+SECTION_TOC = "_оглавление.md"  # своё оглавление раздела или папки базы, когда общее разрослось
+TOC_WORDS, JOURNAL_WORDS = 1500, 15000  # больше — ИИ начинает пропускать середину и тратит лишнее
 TEMPLATES = {"_шаблон-карточки.md", "карточка.md"}  # шаблоны с заглушками {{…}} — не страницы
 ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 LINK = re.compile(r"\[\[([^\]\|#]+)(?:#[^\]\|]*)?(?:\|[^\]]*)?\]\]")
@@ -172,14 +174,37 @@ def main() -> int:
     untracked = git("ls-files", "--others", "--exclude-standard", "--", "*.md")
     if added is not None:
         recent = {line.strip() for line in (added + (untracked or "")).splitlines() if line.strip()}
+    section_tocs = {os.path.dirname(p): read(p) for p in all_md if os.path.basename(p) == SECTION_TOC}
+
+    def in_toc(p: str, base: str, r: str) -> bool:
+        if base in toc_text or r in toc_text:
+            return True
+        d = os.path.dirname(p)
+        while d.startswith(ROOT) and d != ROOT:  # своё оглавление этой папки или любой папки выше
+            t = section_tocs.get(d)
+            if t is not None and (base in t or r in t):
+                return True
+            d = os.path.dirname(d)
+        return False
+
     for p in content_pages:
         r = rel(p)
         base = os.path.splitext(os.path.basename(p))[0]
-        if base not in toc_text and r not in toc_text:
-            yellow.append(f"{r}: нет в ОГЛАВЛЕНИЕ.md — для поиска страницы не существует")
+        if not in_toc(p, base, r):
+            yellow.append(f"{r}: нет в ОГЛАВЛЕНИЕ.md (и в оглавлении своего раздела) — для поиска страницы не существует")
         is_recent = recent is None or r.replace(os.sep, "/") in recent
         if is_recent and base not in journal_text and r not in journal_text:
             yellow.append(f"{r}: нет в ЖУРНАЛ.md — неизвестно, когда и откуда появилась")
+
+    # 4а. Оглавление и журнал не разрослись
+    toc_words = len(toc_text.split())
+    if toc_words > TOC_WORDS:
+        yellow.append(f"ОГЛАВЛЕНИЕ.md: {toc_words} слов — больше {TOC_WORDS}, ИИ начнёт пропускать середину. "
+                      "Вынеси самые большие разделы в свои `_оглавление.md` — скажи «раздели оглавление»")
+    j_words = len(journal_text.split())
+    if j_words > JOURNAL_WORDS:
+        yellow.append(f"ЖУРНАЛ.md: {j_words} слов — больше {JOURNAL_WORDS}. Перенеси хронологию прошлых месяцев в "
+                      "«Архив журнала/» — скажи «заархивируй журнал»")
 
     # 5. Сырьё редактировалось
     dirty = git("status", "--porcelain", "--", "Сырьё")
