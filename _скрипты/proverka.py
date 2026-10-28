@@ -222,6 +222,16 @@ def main() -> int:
         if fm.get("status", "") != "завершена":
             info.append(f"Установка не завершена (шаг {fm.get('step', '?')}) — скажи «продолжим установку»")
 
+    # 9б. Остатки старых умений после обновления (переехали внутрь sbgo / переименованы)
+    skills = os.path.join(ROOT, ".agents", "skills")
+    if os.path.isdir(os.path.join(skills, "sbgo")):
+        old = [n for n in ("ustanovka", "razdel", "itogi", "proverka", "pomosh", "obnovit", "vosstanovit", "sprosi", "bekap")
+               if os.path.isdir(os.path.join(skills, n))]
+        old += ["_скрипты/bekap.py"] if os.path.isfile(os.path.join(ROOT, "_скрипты", "bekap.py")) else []
+        if old:
+            yellow.append("После обновления остались старые умения: " + ", ".join(old) +
+                          " — их работа теперь в sbgo/backup; скажи «удали старые умения» (свои правки в них сначала перенеси)")
+
     # 9а. Правила для ИИ: короткие и без заглушек (sbgo/references/pravila.md)
     agents = os.path.join(ROOT, "AGENTS.md")
     if os.path.isfile(agents):
