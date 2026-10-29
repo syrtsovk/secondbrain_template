@@ -8,7 +8,6 @@
 
 Запуск из любого места:
   python3 _скрипты/backup.py                  собрать копию (на Windows: python _скрипты\\backup.py)
-  python3 _скрипты/backup.py --arhiv          + архив всей базы сейчас (сам он делается раз в 30 дней)
   python3 _скрипты/backup.py --eto-ne-pdn     человек проверил находку: это не личные данные — не останавливаться
   python3 _скрипты/backup.py --vosstanovit    показать, что вернётся на место (ничего не пишет)
   python3 _скрипты/backup.py --vosstanovit --da   вернуть на место
@@ -32,7 +31,6 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
-import zipfile
 from pathlib import Path
 
 for _stream in (sys.stdout, sys.stderr):  # Windows: консоль не utf-8
@@ -239,7 +237,7 @@ def cloud_check(privatnoe: bool) -> tuple[int, str, str]:
     return 0, url, (url if privatnoe else confirmed)
 
 
-def backup(arhiv: bool, ne_pdn: bool, privatnoe: bool) -> int:
+def backup(ne_pdn: bool, privatnoe: bool) -> int:
     code, url, confirmed = cloud_check(privatnoe)
     public = code == 4
     if public:
@@ -302,10 +300,6 @@ def backup(arhiv: bool, ne_pdn: bool, privatnoe: bool) -> int:
         print(f"  {k}: {v}")
     if skipped:
         print("Не взято:\n  " + "\n  ".join(skipped[:10]))
-    zips = own_zips()
-    last = dt.date.fromisoformat(zips[-1].stem[-10:]) if zips else None
-    if arhiv or not last or (dt.date.today() - last).days > 30:
-        make_arhiv()
     return 0
 
 
@@ -335,32 +329,12 @@ author: ии
 ## Чего здесь нет и не будет
 
 - Ключей и паролей — вместо них заглушка. Храни их в менеджере паролей.
-- Папки `_личное/` — она в облако не уходит. Её копия — архив на флешке (`backup.py --arhiv`).
-- Истории чатов, входа в аккаунты, установленных программ — ставятся заново по `0-Начало/1-что-поставить.md`.
+- Папки `_личное/` — она живёт только на этом компьютере и в облако не уходит.
+- Истории чатов — не сохраняется. Нужна — доработай умение `backup` под себя (`0-Начало/7-свои-умения.md`).
+- Входа в аккаунты, установленных программ — ставятся заново по `0-Начало/1-что-поставить.md`.
 {("- Не взято: " + "; ".join(skipped[:10])) if skipped else ""}
 """
     (DEST / "ОПИСЬ.md").write_text(text, encoding="utf-8")
-
-
-def own_zips() -> list[Path]:
-    """Только наши архивы: «<имя базы>-ГГГГ-ММ-ДД.zip». Чужие файлы в папке не трогаем и не читаем."""
-    rx = re.compile(re.escape(ROOT.name) + r"-\d{4}-\d{2}-\d{2}\.zip")
-    folder = HOME / "Бэкап второго мозга"
-    return sorted(f for f in folder.glob("*.zip") if rx.fullmatch(f.name)) if folder.is_dir() else []
-
-
-def make_arhiv() -> None:
-    folder = HOME / "Бэкап второго мозга"
-    folder.mkdir(exist_ok=True)
-    out = folder / f"{ROOT.name}-{TODAY}.zip"
-    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-        for f in ROOT.rglob("*"):
-            if f.is_file() and ".git" not in f.relative_to(ROOT).parts:
-                z.write(f, f.relative_to(ROOT))
-    old = own_zips()[:-3]  # храним три последних своих
-    for f in old:
-        f.unlink()
-    print(f"Архив всей базы (с папкой _личное): {out} — {out.stat().st_size // 1024} КБ. Скопируй на флешку или диск.")
 
 
 def restore(apply: bool) -> int:
@@ -412,4 +386,4 @@ if __name__ == "__main__":
         sys.exit(c)
     if "--vosstanovit" in sys.argv:
         sys.exit(restore("--da" in sys.argv))
-    sys.exit(backup("--arhiv" in sys.argv, "--eto-ne-pdn" in sys.argv, "--oblako-privatnoe" in sys.argv))
+    sys.exit(backup("--eto-ne-pdn" in sys.argv, "--oblako-privatnoe" in sys.argv))
